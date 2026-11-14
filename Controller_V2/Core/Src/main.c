@@ -26,6 +26,7 @@
 #include "gpio.h"
 #include "freertos.h"
 #include "rc/ppm_decoder.h"
+#include "actuator/actuator_output.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -116,7 +117,7 @@ int main(void)
   MX_USART1_UART_Init();
   HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
   /* USER CODE BEGIN 2 */
-
+  /* Startup: after MX_TIM3_Init() */ // Sets disarmed state, minimum PWM, starts TIM3 channels
   /* USER CODE END 2 */
 
   /* Init scheduler */

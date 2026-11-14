@@ -12,6 +12,7 @@
 #define RATE_PID_OUTPUT_MAX   ( 1.0f)
 #define RATE_PID_OUTPUT_SCALE    200.0f
 
+#define RATE_DTERM_LPF_CUTOFF_HZ  20.0f
 
 RateController_t rate_controller;
 
@@ -19,19 +20,19 @@ RateController_t rate_controller;
 void RateController_Init(void)
 {
 
-	rate_controller.roll.kp = 1.0f;
-	rate_controller.roll.ki = 0.0f;
-	rate_controller.roll.kd = 0.0f;
+	rate_controller.roll.kp = 0.11f;
+	rate_controller.roll.ki = 0.005f;//0.0038
+	rate_controller.roll.kd = 0.0006f;
 	rate_controller.roll.initialized = 0U;
 
-	rate_controller.pitch.kp = 1.0f;
-	rate_controller.pitch.ki = 0.0f;
-	rate_controller.pitch.kd = 0.0f;
+	rate_controller.pitch.kp = 0.11f;
+	rate_controller.pitch.ki = 0.005f;//0.0038
+	rate_controller.pitch.kd = 0.0006f;
 	rate_controller.pitch.initialized = 0U;
 
-	rate_controller.yaw.kp = 1.0f;
-	rate_controller.yaw.ki = 0.0f;
-	rate_controller.yaw.kd = 0.0f;
+	rate_controller.yaw.kp = 0.13f;
+	rate_controller.yaw.ki = 0.004f;
+	rate_controller.yaw.kd = 0.00f;
 	rate_controller.yaw.initialized = 0U;
 
 
@@ -62,6 +63,10 @@ void RateController_Init(void)
     rate_controller.roll.previous_output = 0.0f;
     rate_controller.pitch.previous_output = 0.0f;
     rate_controller.yaw.previous_output = 0.0f;
+
+    rate_controller.roll.derivative_filtered = 0.0f;
+    rate_controller.pitch.derivative_filtered = 0.0f;
+    rate_controller.yaw.derivative_filtered = 0.0f;
 }
 
 
@@ -75,6 +80,7 @@ float RatePID_Update(
     float dt
 )
 {
+	uint8_t first_update = 0U;
     float error;
     float proportional;
     float derivative;
@@ -89,7 +95,9 @@ float RatePID_Update(
     {
         pid->previous_error = error;
         pid->previous_measurement = measurement;
+        pid->derivative_filtered = 0.0f;
         pid->initialized = 1U;
+        first_update = 1U;
     }
 
     /* Determine whether actuator limitation opposes integral growth */
@@ -127,19 +135,47 @@ float RatePID_Update(
         pid->integral = -pid->integral_limit;
     }
     /* Derivative term */
+    /* Derivative term: derivative on measurement, followed by LPF */
     derivative = 0.0f;
 
-    if (dt > 0.0f)
+    if ((first_update == 0U) && (dt >= 0.001f) && (dt <= 0.004f))
     {
-    	derivative = -pid->kd * (measurement - pid->previous_measurement) /dt;
-    	if (derivative > pid->derivative_limit)
-    	{
-    	    derivative = pid->derivative_limit;
-    	}
-    	else if (derivative < -pid->derivative_limit)
-    	{
-    	    derivative = -pid->derivative_limit;
-    	}
+        float derivative_raw;
+        float rc;
+        float alpha;
+
+        /* Raw derivative on measurement */
+        derivative_raw =
+            -pid->kd *
+            (measurement - pid->previous_measurement) /
+            dt;
+
+        /* First-order LPF */
+        rc = 1.0f /
+             (2.0f * 3.14159265f * RATE_DTERM_LPF_CUTOFF_HZ);
+
+        alpha = rc / (rc + dt);
+
+        pid->derivative_filtered =
+            alpha * pid->derivative_filtered +
+            (1.0f - alpha) * derivative_raw;
+
+        /* Clamp filtered derivative */
+        if (derivative > pid->derivative_limit)
+        {
+            derivative = pid->derivative_limit;
+        }
+        else if (derivative < -pid->derivative_limit)
+        {
+            derivative = -pid->derivative_limit;
+        }
+
+        derivative = pid->derivative_filtered;
+
+    }
+    else
+    {
+        pid->derivative_filtered = 0.0f;
     }
 
     /* PID output */

@@ -7,34 +7,60 @@
 
 
 #include "estimation/estimator_state.h"
-#include "main.h"
-
-
-/* =========================
- * Estimated State Storage
- * ========================= */
+#include "FreeRTOS.h"
+#include "task.h"
+#include <math.h>
 
 static EstimatorState_t estimator_state;
 
-
-/* =========================
- * Initialization
- * ========================= */
-
 void EstimatorState_Init(void)
 {
+    taskENTER_CRITICAL();
+
     estimator_state.quaternion.q0 = 1.0f;
     estimator_state.quaternion.q1 = 0.0f;
     estimator_state.quaternion.q2 = 0.0f;
     estimator_state.quaternion.q3 = 0.0f;
 
-    estimator_state.roll  = 0.0f;
+    estimator_state.roll = 0.0f;
     estimator_state.pitch = 0.0f;
-    estimator_state.yaw   = 0.0f;
+    estimator_state.yaw = 0.0f;
 
     estimator_state.gyro_x_dps = 0.0f;
     estimator_state.gyro_y_dps = 0.0f;
     estimator_state.gyro_z_dps = 0.0f;
+
+    estimator_state.valid = 0U;
+    estimator_state.last_update_tick = 0U;
+
+    taskEXIT_CRITICAL();
+}
+
+static uint8_t EstimatorState_IsFinite(
+    const AHRS_Quaternion_t *q,
+    float roll,
+    float pitch,
+    float yaw,
+    float gx,
+    float gy,
+    float gz)
+{
+    if (q == NULL)
+    {
+        return 0U;
+    }
+
+    return (uint8_t)(
+        isfinite(q->q0) &&
+        isfinite(q->q1) &&
+        isfinite(q->q2) &&
+        isfinite(q->q3) &&
+        isfinite(roll) &&
+        isfinite(pitch) &&
+        isfinite(yaw) &&
+        isfinite(gx) &&
+        isfinite(gy) &&
+        isfinite(gz));
 }
 
 void EstimatorState_Publish(
@@ -44,34 +70,45 @@ void EstimatorState_Publish(
     float yaw,
     float gyro_x_dps,
     float gyro_y_dps,
-    float gyro_z_dps
-)
+    float gyro_z_dps)
 {
-    if (quaternion == NULL)
+    if (!EstimatorState_IsFinite(
+            quaternion, roll, pitch, yaw,
+            gyro_x_dps, gyro_y_dps, gyro_z_dps))
     {
+        taskENTER_CRITICAL();
+        estimator_state.valid = 0U;
+        taskEXIT_CRITICAL();
         return;
     }
 
-    estimator_state.quaternion = *quaternion;
+    taskENTER_CRITICAL();
 
-    estimator_state.roll  = roll;
+    estimator_state.quaternion = *quaternion;
+    estimator_state.roll = roll;
     estimator_state.pitch = pitch;
-    estimator_state.yaw   = yaw;
+    estimator_state.yaw = yaw;
 
     estimator_state.gyro_x_dps = gyro_x_dps;
     estimator_state.gyro_y_dps = gyro_y_dps;
     estimator_state.gyro_z_dps = gyro_z_dps;
+
+    estimator_state.last_update_tick = xTaskGetTickCount();
+    estimator_state.valid = 1U;
+
+    taskEXIT_CRITICAL();
 }
-uint8_t EstimatorState_Get(
-    EstimatorState_t *state
-)
+
+uint8_t EstimatorState_Get(EstimatorState_t *state)
 {
     if (state == NULL)
     {
         return 0U;
     }
 
+    taskENTER_CRITICAL();
     *state = estimator_state;
+    taskEXIT_CRITICAL();
 
-    return 1U;
+    return state->valid;
 }

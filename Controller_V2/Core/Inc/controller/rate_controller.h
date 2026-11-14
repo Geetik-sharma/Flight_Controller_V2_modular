@@ -18,14 +18,15 @@ typedef struct
 
     float integral;
     float previous_error;
+    float previous_measurement;
     float previous_output;
 
     float integral_limit;
     float derivative_limit;
-    float previous_measurement;
+
+    float derivative_filtered;  // LPF state
+
     uint8_t initialized;
-
-
 } RatePID_t;
 
 typedef struct

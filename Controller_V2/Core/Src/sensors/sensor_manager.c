@@ -9,9 +9,12 @@
 #include "sensors/sensor_processor.h"
 #include "drivers/imu/mpu6500.h"
 #include "system/data_bus.h"
-
+#include "sensors/calibration.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include <math.h>
+
+
 
 #define SENSOR_TASK_FREQUENCY_HZ    1000U
 #define SENSOR_TASK_PERIOD_MS       (1000U / SENSOR_TASK_FREQUENCY_HZ)
@@ -20,7 +23,6 @@
 #define SENSOR_TASK_PRIORITY        6U  // High priority driver task
 
 extern TaskHandle_t xEstimatorTaskHandle;
-
 static void SensorTask(void *argument);
 
 void SensorManager_Start(void)
@@ -46,9 +48,10 @@ void SensorManager_Start(void)
     }
 }
 
+MPU6500_RawData_t raw_data;
+
 static void SensorTask(void *argument)
 {
-    MPU6500_RawData_t raw_data;
     SensorPhysicalData_t physical_data;
     uint8_t estimator_divider = 0;
     TickType_t last_wake_time;
@@ -73,7 +76,6 @@ static void SensorTask(void *argument)
         {
             /* 2. Process raw LSBs into physical units (g, dps, °C) */
             SensorProcessor_ProcessRawToPhysical(&raw_data, &physical_data);
-
             /* 3. Thread-safe publish directly to DataBus */
             DataBus_PublishSensorData(&physical_data);
 

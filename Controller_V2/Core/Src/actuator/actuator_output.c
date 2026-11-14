@@ -8,7 +8,11 @@
 #include "main.h"
 #include "actuator/actuator_output.h"
 #include "tim.h"
+#include <stdbool.h>
+#include "FreeRTOS.h"
+#include "task.h"
 
+static bool actuator_armed = false;
 #define ACTUATOR_PWM_MIN_US    1000U
 #define ACTUATOR_PWM_MAX_US    2000U
 
@@ -38,23 +42,49 @@ static uint16_t ActuatorOutput_ConvertToPWM(float command)
 }
 
 
+static void ActuatorOutput_WriteMinimumPWM(void)
+{
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, ACTUATOR_PWM_MIN_US);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, ACTUATOR_PWM_MIN_US);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, ACTUATOR_PWM_MIN_US);
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_4, ACTUATOR_PWM_MIN_US);
+}
+
 void ActuatorOutput_Init(void)
 {
     /* TIM3 PWM initialization is handled by CubeMX/HAL */
+	    actuator_armed = false;
+	    ActuatorOutput_WriteMinimumPWM();
+	    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+	    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+	    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);
+	    HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
+	    //vTaskDelay(pdMS_TO_TICKS(3000));
+
 }
 
+void ActuatorOutput_SetArmed(bool armed)
+{
+    actuator_armed = armed;
 
+    if (!actuator_armed)
+    {
+        ActuatorOutput_WriteMinimumPWM();
+    }
+}
+
+uint16_t motor1_pwm;
+uint16_t motor2_pwm;
+uint16_t motor3_pwm;
+uint16_t motor4_pwm;
 void ActuatorOutput_SetMotors(
     const ActuatorMotorCommand_t *command
 )
 {
-    uint16_t motor1_pwm;
-    uint16_t motor2_pwm;
-    uint16_t motor3_pwm;
-    uint16_t motor4_pwm;
 
-    if (command == NULL)
+    if ((command == NULL) || (!actuator_armed))
     {
+        ActuatorOutput_WriteMinimumPWM();
         return;
     }
 

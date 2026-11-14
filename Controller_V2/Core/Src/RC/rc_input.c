@@ -10,6 +10,9 @@
 #include "rc/ppm_decoder.h"
 #include <stddef.h>
 
+PPMFrame_t frame;
+
+
 static RCInput_t rc_input;
 
 void RCInput_Init(void)
@@ -25,8 +28,6 @@ void RCInput_Init(void)
 
 void RCInput_Update(void)
 {
-    PPMFrame_t frame;
-
     PPMDecoder_GetFrame(&frame);
 
     if ((frame.frame_valid == 0U) ||

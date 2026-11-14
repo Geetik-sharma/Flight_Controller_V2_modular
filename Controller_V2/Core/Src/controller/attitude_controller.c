@@ -44,9 +44,9 @@ static float AttitudeController_Clamp(
 
 void AttitudeController_Init(void)
 {
-    attitude_controller.kp_roll  = 4.0f;
-    attitude_controller.kp_pitch = 4.0f;
-    attitude_controller.kp_yaw   = 4.0f;
+    attitude_controller.kp_roll  = 3.7f;
+    attitude_controller.kp_pitch = 3.7f;
+    attitude_controller.kp_yaw   = 3.7f;
 
     attitude_controller.max_roll_rate  = ATTITUDE_RATE_MAX;
     attitude_controller.max_pitch_rate = ATTITUDE_RATE_MAX;

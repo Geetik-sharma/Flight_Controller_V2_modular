@@ -8,6 +8,8 @@
 #ifndef INC_ACTUATOR_ACTUATOR_OUTPUT_H_
 #define INC_ACTUATOR_ACTUATOR_OUTPUT_H_
 
+#include <stdbool.h>
+
 typedef struct
 {
     float motor1;
@@ -18,9 +20,10 @@ typedef struct
 
 void ActuatorOutput_Init(void);
 
+void ActuatorOutput_SetArmed(bool armed);
+
 void ActuatorOutput_SetMotors(
     const ActuatorMotorCommand_t *command
 );
-
 
 #endif /* INC_ACTUATOR_ACTUATOR_OUTPUT_H_ */

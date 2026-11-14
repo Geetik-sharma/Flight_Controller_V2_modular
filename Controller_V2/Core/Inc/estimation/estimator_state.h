@@ -9,7 +9,7 @@
 #define INC_ESTIMATION_ESTIMATOR_STATE_H_
 
 #include <stdint.h>
-
+#include "FreeRTOS.h"
 #include "estimation/ahrs.h"
 
 
@@ -20,13 +20,15 @@
 typedef struct
 {
     AHRS_Quaternion_t quaternion;
-
     float roll;
     float pitch;
     float yaw;
     float gyro_x_dps;
     float gyro_y_dps;
     float gyro_z_dps;
+
+    uint8_t valid;
+    TickType_t last_update_tick;
 } EstimatorState_t;
 
 

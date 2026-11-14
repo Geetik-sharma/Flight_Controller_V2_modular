@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #define PPM_MAX_CHANNELS    6U
+#define PPM_FRAME_TIMEOUT_US 100000U
 
 
 typedef struct

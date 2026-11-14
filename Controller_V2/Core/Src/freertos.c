@@ -29,6 +29,7 @@
 #include "sensors/sensor_manager.h"
 #include "estimation/estimator_task.h"
 #include "system/system_event.h"
+#include "actuator/actuator_output.h"
 //#include "sensors/sensors_processor_task.h"
 /* USER CODE END Includes */
 
@@ -146,10 +147,10 @@ void MX_FREERTOS_Init(void) {
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
+
 	(void)argument;
-
+	ActuatorOutput_Init();
 	SystemEvents_Init();
-
 	SystemTask_Start();
 	SensorManager_Start();
 //    SensorProcessorTask_Start();

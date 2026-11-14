@@ -21,7 +21,12 @@
 #include "controller/attitude_controller.h"
 #include "controller/attitude_setpoint.h"
 #include "rc/rc_input.h"
+#include "actuator/actuator_output.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <math.h>
 
+#define ESTIMATOR_TIMEOUT_MS  20U
 #define CONTROLLER_TASK_FREQUENCY_HZ    500U
 #define CONTROLLER_DT_SEC               (1.0f / (float)CONTROLLER_TASK_FREQUENCY_HZ)
 #define RC_MIN_US                  1000.0f
@@ -31,7 +36,11 @@
 #define RC_ROLL_MAX_ANGLE_DEG      30.0f
 #define RC_PITCH_MAX_ANGLE_DEG     30.0f
 #define RC_YAW_MAX_RATE_DPS        200.0f
+#define RC_AUX1_DISARM_US       1300U
+#define RC_AUX1_ARM_US          1700U
+#define RC_THROTTLE_ARM_MAX_US  1050U
 
+static bool aux1_low_seen = false;
 static void ControllerManagerTask(void *argument);
 
 
@@ -50,9 +59,9 @@ static AttitudeSetpoint_t attitude_setpoint;
 
 static RCInput_t rc_input;
 
-volatile float debug_roll_rc_setpoint = 0.0f;
-volatile float debug_pitch_rc_setpoint = 0.0f;
-volatile float debug_yaw_rc_setpoint = 0.0f;
+//volatile float debug_roll_rc_setpoint = 0.0f;
+//volatile float debug_pitch_rc_setpoint = 0.0f;
+//volatile float debug_yaw_rc_setpoint = 0.0f;
 
 void ControllerManager_Init(void)
 {
@@ -81,7 +90,20 @@ void ControllerManager_Init(void)
 
 }
 
+static float clampf(float value, float min_value, float max_value)
+{
+    if (value < min_value)
+    {
+        return min_value;
+    }
 
+    if (value > max_value)
+    {
+        return max_value;
+    }
+
+    return value;
+}
 
 static float ControllerManager_MapRC(
     uint16_t pulse_us,
@@ -124,10 +146,24 @@ void ControllerManager_Update(float dt)
 
     if (rc_input.valid == 0U)
     {
-        attitude_setpoint.roll = 0.0f;
-        attitude_setpoint.pitch = 0.0f;
-        attitude_setpoint.yaw_rate = 0.0f;
-    }
+    	aux1_low_seen = false;
+          ActuatorOutput_SetArmed(false);
+
+          attitude_setpoint.roll = 0.0f;
+          attitude_setpoint.pitch = 0.0f;
+          attitude_setpoint.yaw_rate = 0.0f;
+
+          mixer_input.throttle = 0.0f;
+          mixer_input.roll = 0.0f;
+          mixer_input.pitch = 0.0f;
+          mixer_input.yaw = 0.0f;
+
+          ActuatorMotorCommand_t minimum_command = {0};
+          ActuatorOutput_SetMotors(&minimum_command);
+
+          return;
+      }
+
     else
     {
         attitude_setpoint.roll = ControllerManager_MapRC(
@@ -154,14 +190,81 @@ void ControllerManager_Update(float dt)
             RC_YAW_MAX_RATE_DPS,
             RC_YAW_MAX_RATE_DPS);
     }
-    debug_roll_rc_setpoint = attitude_setpoint.roll;
-    debug_pitch_rc_setpoint = attitude_setpoint.pitch;
-    debug_yaw_rc_setpoint = attitude_setpoint.yaw_rate;
-    if (!EstimatorState_Get(&estimator_state))
+//    debug_roll_rc_setpoint = attitude_setpoint.roll;
+//    debug_pitch_rc_setpoint = attitude_setpoint.pitch;
+//    debug_yaw_rc_setpoint = attitude_setpoint.yaw_rate;
+
+    uint8_t estimator_ok = EstimatorState_Get(&estimator_state);
+
+    if (estimator_ok != 0U)
     {
-        return;
+        TickType_t now = xTaskGetTickCount();
+        TickType_t age = now - estimator_state.last_update_tick;
+        TickType_t timeout_ticks = pdMS_TO_TICKS(ESTIMATOR_TIMEOUT_MS);
+
+        if (age > timeout_ticks)
+        {
+            estimator_ok = 0U;
+        }
+
+        if (!isfinite(estimator_state.roll) ||
+            !isfinite(estimator_state.pitch) ||
+            !isfinite(estimator_state.yaw) ||
+            !isfinite(estimator_state.gyro_x_dps) ||
+            !isfinite(estimator_state.gyro_y_dps) ||
+            !isfinite(estimator_state.gyro_z_dps))
+        {
+            estimator_ok = 0U;
+        }
     }
 
+    if (estimator_ok == 0U)
+    {
+        aux1_low_seen = false;
+
+        ActuatorOutput_SetArmed(false);
+
+        attitude_setpoint.roll = 0.0f;
+        attitude_setpoint.pitch = 0.0f;
+        attitude_setpoint.yaw_rate = 0.0f;
+
+        mixer_input.throttle = 0.0f;
+        mixer_input.roll = 0.0f;
+        mixer_input.pitch = 0.0f;
+        mixer_input.yaw = 0.0f;
+
+        ActuatorMotorCommand_t minimum_command = {0};
+        ActuatorOutput_SetMotors(&minimum_command);
+
+        return;
+    }
+    /*
+     * AUX1 arming state machine.
+     * Startup remains disarmed until AUX1 is observed low.
+     */
+    if (rc_input.aux1 < RC_AUX1_DISARM_US)
+    {
+        aux1_low_seen = true;
+        ActuatorOutput_SetArmed(false);
+    }
+    else if (rc_input.aux1 > RC_AUX1_ARM_US)
+    {
+        if (aux1_low_seen &&
+            (rc_input.throttle <= RC_THROTTLE_ARM_MAX_US))
+        {
+            ActuatorOutput_SetArmed(true);
+            aux1_low_seen = false;
+        }
+        else if (!aux1_low_seen)
+        {
+            /* No new low-to-high transition: preserve current state. */
+        }
+    }
+    else
+    {
+        aux1_low_seen = false;
+        ActuatorOutput_SetArmed(false);
+    }
 
     attitude_controller_input.desired_roll = attitude_setpoint.roll;
     attitude_controller_input.desired_pitch = attitude_setpoint.pitch;
@@ -198,11 +301,26 @@ void ControllerManager_Update(float dt)
         &rate_controller_feedback,
         dt
     );
-    mixer_input.throttle = 0.50f;
+
+
+    float throttle_normalized =
+        ((float)rc_input.throttle - 1000.0f) / 1000.0f;
+
+    mixer_input.throttle = clampf(throttle_normalized, 0.0f, 1.0f);
     mixer_input.roll = rate_controller_output.roll;
     mixer_input.pitch = rate_controller_output.pitch;
     mixer_input.yaw = rate_controller_output.yaw;
     mixer_output = Mixer_Update(&mixer_input);
+
+    ActuatorMotorCommand_t motor_command = {
+        .motor1 = mixer_output.motor1,
+        .motor2 = mixer_output.motor2,
+        .motor3 = mixer_output.motor3,
+        .motor4 = mixer_output.motor4
+    };
+
+    ActuatorOutput_SetMotors(&motor_command);
+
 
     rate_controller_feedback.achieved_roll =
         mixer_output.achieved.roll;
